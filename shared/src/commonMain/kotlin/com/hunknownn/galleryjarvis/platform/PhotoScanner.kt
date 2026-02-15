@@ -13,4 +13,5 @@ expect class PhotoScanner {
     suspend fun scanAllPhotos(): List<PhotoIdentifier>
     suspend fun getPhotoMetadata(id: String): PhotoMetadata?
     fun observeChanges(callback: (List<String>) -> Unit)
+    fun stopObserving()
 }

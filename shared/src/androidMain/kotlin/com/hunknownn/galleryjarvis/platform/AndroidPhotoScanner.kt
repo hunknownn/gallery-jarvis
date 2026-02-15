@@ -3,9 +3,11 @@ package com.hunknownn.galleryjarvis.platform
 import android.content.ContentUris
 import android.database.ContentObserver
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
 import com.hunknownn.galleryjarvis.model.PhotoIdentifier
 import com.hunknownn.galleryjarvis.model.PhotoMetadata
 import kotlinx.coroutines.Dispatchers
@@ -75,12 +77,26 @@ actual class PhotoScanner(
                     cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
                 )
 
+                // EXIF에서 GPS 좌표 추출
+                val latLong: DoubleArray? = try {
+                    val photoUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        MediaStore.setRequireOriginal(uri)
+                    } else {
+                        uri
+                    }
+                    contentResolver.openInputStream(photoUri)?.use { stream ->
+                        ExifInterface(stream).latLong
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+
                 PhotoMetadata(
                     id = id,
                     platformUri = uri.toString(),
                     dateTaken = if (dateTaken > 0) dateTaken else null,
-                    latitude = null,
-                    longitude = null,
+                    latitude = latLong?.get(0),
+                    longitude = latLong?.get(1),
                     mimeType = mimeType,
                     hash = null,
                     embeddingPath = null
@@ -108,5 +124,15 @@ actual class PhotoScanner(
             true,
             contentObserver!!
         )
+    }
+
+    /**
+     * ContentObserver를 해제하여 갤러리 변경 감지를 중단한다.
+     */
+    actual fun stopObserving() {
+        contentObserver?.let {
+            contentResolver.unregisterContentObserver(it)
+            contentObserver = null
+        }
     }
 }

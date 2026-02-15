@@ -18,4 +18,8 @@ actual class PhotoScanner {
     actual fun observeChanges(callback: (List<String>) -> Unit) {
         // TODO: PHPhotoLibraryChangeObserver 등록
     }
+
+    actual fun stopObserving() {
+        // TODO: PHPhotoLibraryChangeObserver 해제
+    }
 }

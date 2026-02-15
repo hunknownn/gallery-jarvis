@@ -1,6 +1,7 @@
 package com.hunknownn.galleryjarvis.ui.viewmodel
 
 import android.content.Context
+import android.location.Geocoder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hunknownn.galleryjarvis.di.ServiceLocator
@@ -107,6 +108,7 @@ class GalleryViewModel(
     fun scanAndClassify() {
         if (_isProcessing.value) return
 
+        // Dispatchers.IO 유지: loadClustersSync(), clustering.assignPhoto() 등 블로킹 DB 호출이 포함됨
         viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
             _processedCount.value = 0
@@ -192,9 +194,13 @@ class GalleryViewModel(
      */
     fun updateClusterName(clusterId: Long, newName: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            db.clustersQueries.updateName(newName, now, clusterId)
-            loadClustersSync()
+            try {
+                val now = System.currentTimeMillis()
+                db.clustersQueries.updateName(newName, now, clusterId)
+                loadClustersSync()
+            } catch (e: Exception) {
+                android.util.Log.e("GalleryViewModel", "클러스터 이름 변경 실패", e)
+            }
         }
     }
 
@@ -203,7 +209,11 @@ class GalleryViewModel(
      */
     fun loadClusters() {
         viewModelScope.launch(Dispatchers.IO) {
-            loadClustersSync()
+            try {
+                loadClustersSync()
+            } catch (e: Exception) {
+                android.util.Log.e("GalleryViewModel", "클러스터 로드 실패", e)
+            }
         }
     }
 
@@ -261,13 +271,34 @@ class GalleryViewModel(
             // 대표 사진에서 카테고리 라벨 추출 (클러스터당 1회만 추론)
             val label = classifyRepresentativePhoto(cluster.representative_photo_id, photos)
 
+            // 클러스터 내 첫 번째 유효 GPS 좌표로 역지오코딩
+            val firstGps = photos.firstOrNull { it.latitude != null && it.longitude != null }
+            val location = firstGps?.let { resolveLocation(it.latitude!!, it.longitude!!) }
+
             val generatedName = nameGenerator.generateName(
                 label = label,
                 dateRange = dateRange,
-                location = null
+                location = location
             )
 
             db.clustersQueries.updateName(generatedName, now, cluster.cluster_id)
+        }
+    }
+
+    /**
+     * GPS 좌표를 역지오코딩하여 지역명을 반환한다.
+     * 예: "제주", "서울", "부산"
+     */
+    @Suppress("DEPRECATION")
+    private fun resolveLocation(lat: Double, lng: Double): String? {
+        return try {
+            val geocoder = Geocoder(platformContext.context)
+            val addresses = geocoder.getFromLocation(lat, lng, 1)
+            addresses?.firstOrNull()?.let { addr ->
+                addr.locality ?: addr.subAdminArea ?: addr.adminArea
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -326,29 +357,40 @@ class GalleryViewModel(
             if (!_autoClassifyEnabled.value) return@observeChanges
 
             viewModelScope.launch(Dispatchers.IO) {
-                for (photoId in changedIds) {
-                    val existing = db.photosQueries.findById(photoId).executeAsOneOrNull()
-                    if (existing?.embedding_path != null) continue
+                try {
+                    for (photoId in changedIds) {
+                        val existing = db.photosQueries.findById(photoId).executeAsOneOrNull()
+                        if (existing?.embedding_path != null) continue
 
-                    val metadata = scanner.getPhotoMetadata(photoId) ?: continue
-                    db.photosQueries.insert(
-                        metadata.id, metadata.platformUri, metadata.dateTaken,
-                        metadata.latitude, metadata.longitude, metadata.mimeType,
-                        metadata.hash, metadata.embeddingPath
-                    )
+                        val metadata = scanner.getPhotoMetadata(photoId) ?: continue
+                        db.photosQueries.insert(
+                            metadata.id, metadata.platformUri, metadata.dateTaken,
+                            metadata.latitude, metadata.longitude, metadata.mimeType,
+                            metadata.hash, metadata.embeddingPath
+                        )
 
-                    val imageBytes = ImageLoader.loadImageBytes(platformContext, metadata.platformUri) ?: continue
-                    val embedding = extractor.extractEmbedding(imageBytes)
+                        val imageBytes = ImageLoader.loadImageBytes(platformContext, metadata.platformUri) ?: continue
+                        val embedding = extractor.extractEmbedding(imageBytes)
 
-                    val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photoId}.bin"
-                    fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
-                    db.photosQueries.updateEmbeddingPath(embeddingPath, photoId)
+                        val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photoId}.bin"
+                        fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
+                        db.photosQueries.updateEmbeddingPath(embeddingPath, photoId)
 
-                    clustering.assignPhoto(photoId, embedding)
+                        clustering.assignPhoto(photoId, embedding)
+                    }
+                    loadClustersSync()
+                } catch (e: Exception) {
+                    android.util.Log.e("GalleryViewModel", "갤러리 변경 처리 실패", e)
                 }
-                loadClustersSync()
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        scanner.stopObserving()
+        extractor.close()
+        imageLabeler.close()
     }
 
     /**

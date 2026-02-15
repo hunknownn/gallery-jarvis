@@ -18,22 +18,34 @@ class EmbeddingWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val db = ServiceLocator.database
-        val extractor = ServiceLocator.embeddingExtractor
-        val fileStorage = ServiceLocator.fileStorage
-        val platformContext = PlatformContext(applicationContext)
+        return try {
+            val db = ServiceLocator.database
+            val extractor = ServiceLocator.embeddingExtractor
+            val fileStorage = ServiceLocator.fileStorage
+            val platformContext = PlatformContext(applicationContext)
 
-        val photosWithoutEmbedding = db.photosQueries.selectWithoutEmbedding().executeAsList()
+            val photosWithoutEmbedding = db.photosQueries.selectWithoutEmbedding().executeAsList()
 
-        for (photo in photosWithoutEmbedding) {
-            val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platform_uri) ?: continue
-            val embedding = extractor.extractEmbedding(imageBytes)
+            for (photo in photosWithoutEmbedding) {
+                if (isStopped) break
 
-            val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.photo_id}.bin"
-            fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
-            db.photosQueries.updateEmbeddingPath(embeddingPath, photo.photo_id)
+                try {
+                    val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platform_uri) ?: continue
+                    val embedding = extractor.extractEmbedding(imageBytes)
+
+                    val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.photo_id}.bin"
+                    fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
+                    db.photosQueries.updateEmbeddingPath(embeddingPath, photo.photo_id)
+                } catch (e: OutOfMemoryError) {
+                    android.util.Log.e("EmbeddingWorker", "OOM: 사진 ${photo.photo_id} 건너뜀", e)
+                    System.gc()
+                }
+            }
+
+            Result.success()
+        } catch (e: Exception) {
+            android.util.Log.e("EmbeddingWorker", "임베딩 추출 실패", e)
+            Result.failure()
         }
-
-        return Result.success()
     }
 }

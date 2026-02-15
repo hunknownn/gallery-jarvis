@@ -18,25 +18,32 @@ class ClusteringWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val db = ServiceLocator.database
-        val fileStorage = ServiceLocator.fileStorage
-        val clustering = ServiceLocator.incrementalClustering
+        return try {
+            val db = ServiceLocator.database
+            val fileStorage = ServiceLocator.fileStorage
+            val clustering = ServiceLocator.incrementalClustering
 
-        // 임베딩이 있는 모든 사진 조회
-        val allPhotos = db.photosQueries.selectAll().executeAsList()
+            // 임베딩이 있는 모든 사진 조회
+            val allPhotos = db.photosQueries.selectAll().executeAsList()
 
-        for (photo in allPhotos) {
-            val embeddingPath = photo.embedding_path ?: continue
+            for (photo in allPhotos) {
+                if (isStopped) break
 
-            // 이미 클러스터에 할당된 사진은 건너뜀
-            val existing = db.photo_cluster_mapQueries.findByPhotoId(photo.photo_id).executeAsList()
-            if (existing.isNotEmpty()) continue
+                val embeddingPath = photo.embedding_path ?: continue
 
-            val embeddingBytes = fileStorage.loadFile(embeddingPath) ?: continue
-            val embedding = EmbeddingSerializer.deserialize(embeddingBytes)
-            clustering.assignPhoto(photo.photo_id, embedding)
+                // 이미 클러스터에 할당된 사진은 건너뜀
+                val existing = db.photo_cluster_mapQueries.findByPhotoId(photo.photo_id).executeAsList()
+                if (existing.isNotEmpty()) continue
+
+                val embeddingBytes = fileStorage.loadFile(embeddingPath) ?: continue
+                val embedding = EmbeddingSerializer.deserialize(embeddingBytes)
+                clustering.assignPhoto(photo.photo_id, embedding)
+            }
+
+            Result.success()
+        } catch (e: Exception) {
+            android.util.Log.e("ClusteringWorker", "클러스터링 실패", e)
+            Result.failure()
         }
-
-        return Result.success()
     }
 }
