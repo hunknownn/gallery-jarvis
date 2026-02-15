@@ -23,18 +23,23 @@ import java.nio.channels.FileChannel
 actual class ImageLabeler(
     private val platformContext: PlatformContext
 ) {
-    private val interpreter: Interpreter by lazy {
-        val model = loadModelFile()
-        val options = Interpreter.Options().apply {
-            setNumThreads(4)
+    private val interpreter: Interpreter? by lazy {
+        try {
+            val model = loadModelFile()
+            val options = Interpreter.Options().apply {
+                setNumThreads(4)
+            }
+            Interpreter(model, options)
+        } catch (e: Exception) {
+            android.util.Log.e("ImageLabeler", "모델 로드 실패", e)
+            null
         }
-        Interpreter(model, options)
     }
 
     /** 분류 모델의 출력 클래스 수 (ImageNet-1000 + background) */
     private val numClasses: Int by lazy {
-        val outputShape = interpreter.getOutputTensor(0).shape()
-        outputShape[1]
+        val outputShape = interpreter?.getOutputTensor(0)?.shape()
+        outputShape?.get(1) ?: 0
     }
 
     private fun loadModelFile(): MappedByteBuffer {
@@ -55,6 +60,9 @@ actual class ImageLabeler(
      * @return 한국어 카테고리 라벨 (예: "동물", "음식"). 분류 실패 시 null.
      */
     actual fun classifyImage(imageData: ByteArray): String? {
+        val model = interpreter ?: return null
+        if (numClasses == 0) return null
+
         val bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
             ?: return null
         val resized = Bitmap.createScaledBitmap(
@@ -63,7 +71,7 @@ actual class ImageLabeler(
 
         val input = preprocessBitmap(resized)
         val output = Array(1) { FloatArray(numClasses) }
-        interpreter.run(input, output)
+        model.run(input, output)
 
         if (resized != bitmap) resized.recycle()
         bitmap.recycle()
@@ -99,7 +107,7 @@ actual class ImageLabeler(
     }
 
     actual fun close() {
-        interpreter.close()
+        interpreter?.close()
     }
 
     companion object {

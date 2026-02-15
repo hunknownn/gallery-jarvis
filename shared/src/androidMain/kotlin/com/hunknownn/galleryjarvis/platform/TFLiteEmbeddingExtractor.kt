@@ -22,12 +22,17 @@ import java.nio.channels.FileChannel
 actual class EmbeddingExtractor(
     private val platformContext: PlatformContext
 ) {
-    private val interpreter: Interpreter by lazy {
-        val model = loadModelFile()
-        val options = Interpreter.Options().apply {
-            setNumThreads(4)
+    private val interpreter: Interpreter? by lazy {
+        try {
+            val model = loadModelFile()
+            val options = Interpreter.Options().apply {
+                setNumThreads(4)
+            }
+            Interpreter(model, options)
+        } catch (e: Exception) {
+            android.util.Log.e("EmbeddingExtractor", "모델 로드 실패", e)
+            null
         }
-        Interpreter(model, options)
     }
 
     /**
@@ -51,13 +56,15 @@ actual class EmbeddingExtractor(
      * @return 1024차원 임베딩 벡터
      */
     actual fun extractEmbedding(imageData: ByteArray): FloatArray {
+        val model = interpreter ?: return FloatArray(Constants.EMBEDDING_DIM)
+
         val bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
             ?: return FloatArray(Constants.EMBEDDING_DIM)
         val resized = Bitmap.createScaledBitmap(bitmap, Constants.IMAGE_SIZE, Constants.IMAGE_SIZE, true)
 
         val input = preprocessBitmap(resized)
         val output = Array(1) { FloatArray(Constants.EMBEDDING_DIM) }
-        interpreter.run(input, output)
+        model.run(input, output)
 
         // 원본 비트맵과 다른 경우에만 recycle
         if (resized != bitmap) resized.recycle()
@@ -88,7 +95,7 @@ actual class EmbeddingExtractor(
     }
 
     actual fun close() {
-        interpreter.close()
+        interpreter?.close()
     }
 
     companion object {

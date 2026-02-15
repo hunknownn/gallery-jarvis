@@ -1,9 +1,12 @@
 package com.hunknownn.galleryjarvis
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -14,6 +17,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hunknownn.galleryjarvis.platform.PlatformContext
@@ -44,6 +49,8 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
 
+    val activity = LocalContext.current as ComponentActivity
+
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -51,6 +58,8 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
+
+    var permissionDeniedPermanently by remember { mutableStateOf(false) }
 
     var currentScreen by remember {
         mutableStateOf(if (hasPermission) Screen.ClusterList else Screen.Permission)
@@ -66,13 +75,29 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasPermission = granted
-        if (granted) currentScreen = Screen.ClusterList
+        if (granted) {
+            permissionDeniedPermanently = false
+            currentScreen = Screen.ClusterList
+        } else {
+            // rationale이 false이면 영구 거부 상태
+            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                activity, permission
+            )
+            permissionDeniedPermanently = !shouldShowRationale
+        }
     }
 
     when (currentScreen) {
         Screen.Permission -> {
             PermissionScreen(
-                onRequestPermission = { permissionLauncher.launch(permission) }
+                onRequestPermission = { permissionLauncher.launch(permission) },
+                permissionDeniedPermanently = permissionDeniedPermanently,
+                onOpenSettings = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", activity.packageName, null)
+                    }
+                    activity.startActivity(intent)
+                }
             )
         }
 

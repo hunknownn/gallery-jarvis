@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,9 +20,14 @@ import androidx.compose.ui.unit.dp
  * 갤러리 접근 권한 요청 화면.
  *
  * 사진 접근 권한이 없을 때 표시되며, 권한 요청 사유를 안내한다.
+ * 영구 거부 시 시스템 설정으로 이동하는 버튼을 표시한다.
  */
 @Composable
-fun PermissionScreen(onRequestPermission: () -> Unit) {
+fun PermissionScreen(
+    onRequestPermission: () -> Unit,
+    permissionDeniedPermanently: Boolean = false,
+    onOpenSettings: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -47,8 +53,22 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(32.dp))
-        Button(onClick = onRequestPermission) {
-            Text("권한 허용")
+
+        if (permissionDeniedPermanently) {
+            Text(
+                text = "권한이 영구적으로 거부되었습니다.\n설정에서 권한을 허용해주세요.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onOpenSettings) {
+                Text("설정 열기")
+            }
+        } else {
+            Button(onClick = onRequestPermission) {
+                Text("권한 허용")
+            }
         }
     }
 }

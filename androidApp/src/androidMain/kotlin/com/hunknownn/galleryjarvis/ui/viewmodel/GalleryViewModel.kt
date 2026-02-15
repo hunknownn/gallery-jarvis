@@ -112,38 +112,44 @@ class GalleryViewModel(
                             continue
                         }
 
-                        // DB에 사진 메타데이터 저장
-                        val metadata = scanner.getPhotoMetadata(photo.id) ?: run {
-                            processed++
-                            continue
+                        try {
+                            // DB에 사진 메타데이터 저장
+                            val metadata = scanner.getPhotoMetadata(photo.id) ?: run {
+                                processed++
+                                continue
+                            }
+                            db.photosQueries.insert(
+                                metadata.id, metadata.platformUri, metadata.dateTaken,
+                                metadata.latitude, metadata.longitude, metadata.mimeType,
+                                metadata.hash, metadata.embeddingPath
+                            )
+
+                            // 임베딩 추출
+                            val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platformUri) ?: run {
+                                processed++
+                                continue
+                            }
+                            val embedding = extractor.extractEmbedding(imageBytes)
+
+                            // 임베딩 캐시 저장
+                            val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.id}.bin"
+                            fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
+                            db.photosQueries.updateEmbeddingPath(embeddingPath, photo.id)
+
+                            // 클러스터에 할당
+                            clustering.assignPhoto(photo.id, embedding)
+                        } catch (e: OutOfMemoryError) {
+                            android.util.Log.e("GalleryViewModel", "OOM: 사진 ${photo.id} 건너뜀", e)
+                            System.gc()
                         }
-                        db.photosQueries.insert(
-                            metadata.id, metadata.platformUri, metadata.dateTaken,
-                            metadata.latitude, metadata.longitude, metadata.mimeType,
-                            metadata.hash, metadata.embeddingPath
-                        )
-
-                        // 임베딩 추출
-                        val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platformUri) ?: run {
-                            processed++
-                            continue
-                        }
-                        val embedding = extractor.extractEmbedding(imageBytes)
-
-                        // 임베딩 캐시 저장
-                        val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.id}.bin"
-                        fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
-                        db.photosQueries.updateEmbeddingPath(embeddingPath, photo.id)
-
-                        // 클러스터에 할당
-                        clustering.assignPhoto(photo.id, embedding)
 
                         processed++
                         _progress.value = "처리 중... $processed/$total"
                     }
 
-                    // 배치 완료마다 UI에 반영
+                    // 배치 완료마다 UI에 반영 + GC 유도
                     loadClustersSync()
+                    System.gc()
                 }
 
                 // 클러스터 이름 자동 생성
