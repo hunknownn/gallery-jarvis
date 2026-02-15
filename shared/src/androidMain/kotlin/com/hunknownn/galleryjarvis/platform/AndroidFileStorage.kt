@@ -2,6 +2,11 @@ package com.hunknownn.galleryjarvis.platform
 
 import java.io.File
 
+/**
+ * Android 환경의 파일 저장소 구현.
+ *
+ * 임베딩 벡터 캐시를 앱 내부 캐시 디렉토리(`/cache/embeddings/`)에 바이너리 파일로 관리한다.
+ */
 actual class FileStorage(
     private val platformContext: PlatformContext
 ) {
