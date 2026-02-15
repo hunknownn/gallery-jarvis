@@ -1,0 +1,22 @@
+CREATE TABLE photos (
+    photo_id TEXT PRIMARY KEY,
+    platform_uri TEXT NOT NULL,
+    date_taken INTEGER,
+    latitude REAL,
+    longitude REAL,
+    mime_type TEXT,
+    hash TEXT,
+    embedding_path TEXT
+);
+
+selectAll:
+SELECT * FROM photos;
+
+findById:
+SELECT * FROM photos WHERE photo_id = ?;
+
+insert:
+INSERT OR REPLACE INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteById:
+DELETE FROM photos WHERE photo_id = ?;

@@ -1,0 +1,14 @@
+CREATE TABLE photo_cluster_map (
+    photo_id TEXT NOT NULL,
+    cluster_id INTEGER NOT NULL,
+    PRIMARY KEY (photo_id, cluster_id)
+);
+
+findByPhotoId:
+SELECT * FROM photo_cluster_map WHERE photo_id = ?;
+
+findByClusterId:
+SELECT * FROM photo_cluster_map WHERE cluster_id = ?;
+
+insert:
+INSERT OR REPLACE INTO photo_cluster_map VALUES (?, ?);

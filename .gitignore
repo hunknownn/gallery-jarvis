@@ -26,6 +26,7 @@ iosApp/iosApp.xcodeproj/xcuserdata/
 *.class
 *.jar
 *.war
+.kotlin/
 
 # OS
 Thumbs.db

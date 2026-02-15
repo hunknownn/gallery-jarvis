@@ -1,0 +1,18 @@
+CREATE TABLE clusters (
+    cluster_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    representative_photo_id TEXT,
+    center_embedding_path TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM clusters;
+
+insert:
+INSERT INTO clusters (name, representative_photo_id, center_embedding_path, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?);
+
+updateName:
+UPDATE clusters SET name = ?, updated_at = ? WHERE cluster_id = ?;
