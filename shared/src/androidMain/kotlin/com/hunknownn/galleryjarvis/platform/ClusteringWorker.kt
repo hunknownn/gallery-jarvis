@@ -3,6 +3,7 @@ package com.hunknownn.galleryjarvis.platform
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.hunknownn.galleryjarvis.clustering.ClusteringEngine
 import com.hunknownn.galleryjarvis.di.ServiceLocator
 import com.hunknownn.galleryjarvis.util.EmbeddingSerializer
 
@@ -36,8 +37,8 @@ class ClusteringWorker(
                 if (existing.isNotEmpty()) continue
 
                 val embeddingBytes = fileStorage.loadFile(embeddingPath) ?: continue
-                val embedding = EmbeddingSerializer.deserialize(embeddingBytes)
-                clustering.assignPhoto(photo.photo_id, embedding)
+                val embedding = ClusteringEngine.l2Normalize(EmbeddingSerializer.deserialize(embeddingBytes))
+                clustering.assignPhoto(photo.photo_id, embedding, photo.date_taken, photo.latitude, photo.longitude)
             }
 
             Result.success()

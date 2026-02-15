@@ -3,6 +3,7 @@ package com.hunknownn.galleryjarvis.platform
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.hunknownn.galleryjarvis.Constants
+import com.hunknownn.galleryjarvis.clustering.ClusteringEngine
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -70,7 +71,7 @@ actual class EmbeddingExtractor(
         if (resized != bitmap) resized.recycle()
         bitmap.recycle()
 
-        return output[0]
+        return ClusteringEngine.l2Normalize(output[0])
     }
 
     /**

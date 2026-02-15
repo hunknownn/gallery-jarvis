@@ -18,20 +18,29 @@ import kotlinx.datetime.Clock
  * 4. threshold 이하 → 가장 가까운 기존 클러스터에 추가 + center 업데이트
  * 5. threshold 초과 → 새 클러스터 생성
  *
- * @param threshold 기존 클러스터에 할당하기 위한 최대 코사인 거리 (기본값 0.5)
+ * @param threshold 기존 클러스터에 할당하기 위한 최대 복합 거리 (기본값 0.35)
  */
 class IncrementalClustering(
     private val database: GalleryJarvisDatabase,
     private val fileStorage: FileStorage,
-    private val threshold: Float = 0.5f
+    private val threshold: Float = 0.35f
 ) {
     /**
      * 사진을 기존 클러스터에 할당하거나, 새 클러스터를 생성한다.
      *
      * @param photoId 사진 ID (MediaStore ID 또는 PHAsset localIdentifier)
      * @param embedding 해당 사진의 임베딩 벡터
+     * @param dateTaken 사진 촬영 시각 (epoch millis), null이면 중립값 사용
+     * @param latitude GPS 위도, null이면 중립값 사용
+     * @param longitude GPS 경도, null이면 중립값 사용
      */
-    fun assignPhoto(photoId: String, embedding: FloatArray) {
+    fun assignPhoto(
+        photoId: String,
+        embedding: FloatArray,
+        dateTaken: Long? = null,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ) {
         val clusters = database.clustersQueries.selectAll().executeAsList()
 
         if (clusters.isEmpty()) {
@@ -39,7 +48,7 @@ class IncrementalClustering(
             return
         }
 
-        // 가장 가까운 클러스터 탐색
+        // 가장 가까운 클러스터 탐색 (복합 거리 사용)
         var minDistance = Float.MAX_VALUE
         var nearestClusterId: Long? = null
         var nearestCenterPath: String? = null
@@ -47,8 +56,17 @@ class IncrementalClustering(
         for (cluster in clusters) {
             val centerPath = cluster.center_embedding_path ?: continue
             val centerBytes = fileStorage.loadFile(centerPath) ?: continue
-            val centerEmbedding = EmbeddingSerializer.deserialize(centerBytes)
-            val distance = ClusteringEngine.cosineDistance(embedding, centerEmbedding)
+            val centerEmbedding = ClusteringEngine.l2Normalize(EmbeddingSerializer.deserialize(centerBytes))
+
+            val embDist = ClusteringEngine.cosineDistance(embedding, centerEmbedding)
+
+            // 대표 사진의 메타데이터로 시간/GPS 거리 계산
+            val repPhoto = cluster.representative_photo_id?.let {
+                database.photosQueries.findById(it).executeAsOneOrNull()
+            }
+            val timeDist = ClusteringEngine.timeDistance(dateTaken, repPhoto?.date_taken)
+            val gpsDist = ClusteringEngine.gpsDistance(latitude, longitude, repPhoto?.latitude, repPhoto?.longitude)
+            val distance = ClusteringEngine.combinedDistance(embDist, timeDist, gpsDist)
 
             if (distance < minDistance) {
                 minDistance = distance
@@ -84,7 +102,7 @@ class IncrementalClustering(
             val oldCenterBytes = fileStorage.loadFile(centerPath)!!
             val oldCenter = EmbeddingSerializer.deserialize(oldCenterBytes)
             // clusterSize는 이미 새 사진 포함이므로 -1
-            val newCenter = ClusteringEngine.updateCenter(oldCenter, embedding, (clusterSize - 1).toInt())
+            val newCenter = ClusteringEngine.updateCenterNormalized(oldCenter, embedding, (clusterSize - 1).toInt())
 
             fileStorage.saveFile(centerPath, EmbeddingSerializer.serialize(newCenter))
             database.clustersQueries.updateCenterEmbeddingPath(

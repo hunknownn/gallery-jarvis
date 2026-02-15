@@ -168,8 +168,8 @@ class GalleryViewModel(
                             fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
                             db.photosQueries.updateEmbeddingPath(embeddingPath, photo.id)
 
-                            // 클러스터에 할당
-                            clustering.assignPhoto(photo.id, embedding)
+                            // 클러스터에 할당 (복합 거리: 임베딩 + 시간 + GPS)
+                            clustering.assignPhoto(photo.id, embedding, metadata.dateTaken, metadata.latitude, metadata.longitude)
                         } catch (e: OutOfMemoryError) {
                             android.util.Log.e("GalleryViewModel", "OOM: 사진 ${photo.id} 건너뜀", e)
                             System.gc()
@@ -396,7 +396,7 @@ class GalleryViewModel(
                         fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
                         db.photosQueries.updateEmbeddingPath(embeddingPath, photoId)
 
-                        clustering.assignPhoto(photoId, embedding)
+                        clustering.assignPhoto(photoId, embedding, metadata.dateTaken, metadata.latitude, metadata.longitude)
                     }
                     loadClustersSync()
                 } catch (e: Exception) {
