@@ -38,7 +38,6 @@ kotlin {
             implementation(libs.sqldelight.android.driver)
             implementation(libs.androidx.work.runtime)
             implementation(libs.tflite)
-            implementation(libs.tflite.support)
         }
 
         iosMain.dependencies {
