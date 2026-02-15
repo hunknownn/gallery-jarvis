@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
+import java.util.Calendar
 
 /**
  * 갤러리 화면의 상태를 관리하는 ViewModel.
@@ -27,6 +29,7 @@ class GalleryViewModel(
     private val extractor = ServiceLocator.embeddingExtractor
     private val fileStorage = ServiceLocator.fileStorage
     private val clustering = ServiceLocator.incrementalClustering
+    private val nameGenerator = ServiceLocator.nameGenerator
 
     private val _clusters = MutableStateFlow<List<ClusterWithPhotos>>(emptyList())
     val clusters: StateFlow<List<ClusterWithPhotos>> = _clusters.asStateFlow()
@@ -37,14 +40,22 @@ class GalleryViewModel(
     private val _progress = MutableStateFlow("")
     val progress: StateFlow<String> = _progress.asStateFlow()
 
+    companion object {
+        private const val BATCH_SIZE = 50
+    }
+
     init {
         loadClusters()
+        observeGalleryChanges()
     }
 
     /**
-     * 갤러리 사진을 스캔하고, 임베딩 추출 및 클러스터링을 수행한다.
+     * 갤러리 사진을 스캔하고, 배치 단위(50장)로 임베딩 추출 및 클러스터링을 수행한다.
+     * 이미 처리된 사진(embedding_path 존재)은 건너뛰므로 중단 후 재진입 시 이어서 처리된다.
      */
     fun scanAndClassify() {
+        if (_isProcessing.value) return
+
         viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
             try {
@@ -52,39 +63,57 @@ class GalleryViewModel(
                 _progress.value = "사진 ${photos.size}장 발견"
 
                 var processed = 0
-                for (photo in photos) {
-                    // 이미 처리된 사진은 건너뜀
-                    val existing = db.photosQueries.findById(photo.id).executeAsOneOrNull()
-                    if (existing?.embedding_path != null) {
+                val total = photos.size
+
+                for (batch in photos.chunked(BATCH_SIZE)) {
+                    for (photo in batch) {
+                        yield() // 코루틴 취소 지점
+
+                        // 이미 처리된 사진은 건너뜀
+                        val existing = db.photosQueries.findById(photo.id).executeAsOneOrNull()
+                        if (existing?.embedding_path != null) {
+                            processed++
+                            continue
+                        }
+
+                        // DB에 사진 메타데이터 저장
+                        val metadata = scanner.getPhotoMetadata(photo.id) ?: run {
+                            processed++
+                            continue
+                        }
+                        db.photosQueries.insert(
+                            metadata.id, metadata.platformUri, metadata.dateTaken,
+                            metadata.latitude, metadata.longitude, metadata.mimeType,
+                            metadata.hash, metadata.embeddingPath
+                        )
+
+                        // 임베딩 추출
+                        val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platformUri) ?: run {
+                            processed++
+                            continue
+                        }
+                        val embedding = extractor.extractEmbedding(imageBytes)
+
+                        // 임베딩 캐시 저장
+                        val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.id}.bin"
+                        fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
+                        db.photosQueries.updateEmbeddingPath(embeddingPath, photo.id)
+
+                        // 클러스터에 할당
+                        clustering.assignPhoto(photo.id, embedding)
+
                         processed++
-                        continue
+                        _progress.value = "처리 중... $processed/$total"
                     }
 
-                    // DB에 사진 메타데이터 저장
-                    val metadata = scanner.getPhotoMetadata(photo.id) ?: continue
-                    db.photosQueries.insert(
-                        metadata.id, metadata.platformUri, metadata.dateTaken,
-                        metadata.latitude, metadata.longitude, metadata.mimeType,
-                        metadata.hash, metadata.embeddingPath
-                    )
-
-                    // 임베딩 추출
-                    val imageBytes = ImageLoader.loadImageBytes(platformContext, photo.platformUri) ?: continue
-                    val embedding = extractor.extractEmbedding(imageBytes)
-
-                    // 임베딩 캐시 저장
-                    val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photo.id}.bin"
-                    fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
-                    db.photosQueries.updateEmbeddingPath(embeddingPath, photo.id)
-
-                    // 클러스터에 할당
-                    clustering.assignPhoto(photo.id, embedding)
-
-                    processed++
-                    _progress.value = "처리 중... $processed/${photos.size}"
+                    // 배치 완료마다 UI에 반영
+                    loadClustersSync()
                 }
 
-                loadClusters()
+                // 클러스터 이름 자동 생성
+                generateClusterNames()
+
+                loadClustersSync()
                 _progress.value = "완료"
             } catch (e: Exception) {
                 _progress.value = "오류: ${e.message}"
@@ -95,26 +124,123 @@ class GalleryViewModel(
     }
 
     /**
+     * 클러스터 이름을 사용자 입력값으로 변경한다.
+     */
+    fun updateClusterName(clusterId: Long, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            db.clustersQueries.updateName(newName, now, clusterId)
+            loadClustersSync()
+        }
+    }
+
+    /**
      * DB에서 클러스터 목록을 로드하여 UI 상태를 갱신한다.
      */
     fun loadClusters() {
         viewModelScope.launch(Dispatchers.IO) {
-            val clusterList = db.clustersQueries.selectAll().executeAsList()
-            val result = clusterList.map { cluster ->
-                val photos = db.photosQueries.selectByClusterId(cluster.cluster_id).executeAsList()
-                val photoUris = photos.map { it.platform_uri }
+            loadClustersSync()
+        }
+    }
 
-                ClusterWithPhotos(
-                    clusterId = cluster.cluster_id,
-                    name = cluster.name ?: "그룹 ${cluster.cluster_id}",
-                    representativePhotoUri = cluster.representative_photo_id?.let { repId ->
-                        photos.find { it.photo_id == repId }?.platform_uri
-                    } ?: photoUris.firstOrNull(),
-                    photoCount = photos.size,
-                    photoUris = photoUris
-                )
+    /**
+     * 동기적으로 클러스터 목록을 로드. IO 스레드에서 호출해야 한다.
+     */
+    private fun loadClustersSync() {
+        val clusterList = db.clustersQueries.selectAll().executeAsList()
+        val result = clusterList.map { cluster ->
+            val photos = db.photosQueries.selectByClusterId(cluster.cluster_id).executeAsList()
+            val photoUris = photos.map { it.platform_uri }
+
+            ClusterWithPhotos(
+                clusterId = cluster.cluster_id,
+                name = cluster.name ?: "그룹 ${cluster.cluster_id}",
+                representativePhotoUri = cluster.representative_photo_id?.let { repId ->
+                    photos.find { it.photo_id == repId }?.platform_uri
+                } ?: photoUris.firstOrNull(),
+                photoCount = photos.size,
+                photoUris = photoUris
+            )
+        }
+        _clusters.value = result
+    }
+
+    /**
+     * 이름이 없는 클러스터에 날짜 기반 이름을 자동 생성한다.
+     */
+    private fun generateClusterNames() {
+        val clusterList = db.clustersQueries.selectAll().executeAsList()
+        val now = System.currentTimeMillis()
+
+        for (cluster in clusterList) {
+            // 이미 이름이 있으면 건너뜀
+            if (cluster.name != null) continue
+
+            val photos = db.photosQueries.selectByClusterId(cluster.cluster_id).executeAsList()
+            val dateRange = extractDateRange(photos.mapNotNull { it.date_taken })
+
+            val generatedName = nameGenerator.generateName(
+                label = null,
+                dateRange = dateRange,
+                location = null
+            )
+
+            db.clustersQueries.updateName(generatedName, now, cluster.cluster_id)
+        }
+    }
+
+    /**
+     * 타임스탬프 목록에서 날짜 범위 문자열을 추출한다.
+     * 예: "2024.06", "2024.03 ~ 2024.06"
+     */
+    private fun extractDateRange(timestamps: List<Long>): String? {
+        if (timestamps.isEmpty()) return null
+
+        val cal = Calendar.getInstance()
+
+        data class YearMonth(val year: Int, val month: Int)
+
+        val yearMonths = timestamps.map { ts ->
+            cal.timeInMillis = ts
+            YearMonth(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
+        }
+        val earliest = yearMonths.minBy { it.year * 100 + it.month }
+        val latest = yearMonths.maxBy { it.year * 100 + it.month }
+
+        val startStr = "${earliest.year}.${earliest.month.toString().padStart(2, '0')}"
+        val endStr = "${latest.year}.${latest.month.toString().padStart(2, '0')}"
+
+        return if (startStr == endStr) startStr else "$startStr ~ $endStr"
+    }
+
+    /**
+     * 갤러리 변경을 감지하여 새 사진을 증분 처리한다.
+     */
+    private fun observeGalleryChanges() {
+        scanner.observeChanges { changedIds ->
+            viewModelScope.launch(Dispatchers.IO) {
+                for (photoId in changedIds) {
+                    val existing = db.photosQueries.findById(photoId).executeAsOneOrNull()
+                    if (existing?.embedding_path != null) continue
+
+                    val metadata = scanner.getPhotoMetadata(photoId) ?: continue
+                    db.photosQueries.insert(
+                        metadata.id, metadata.platformUri, metadata.dateTaken,
+                        metadata.latitude, metadata.longitude, metadata.mimeType,
+                        metadata.hash, metadata.embeddingPath
+                    )
+
+                    val imageBytes = ImageLoader.loadImageBytes(platformContext, metadata.platformUri) ?: continue
+                    val embedding = extractor.extractEmbedding(imageBytes)
+
+                    val embeddingPath = "${fileStorage.getEmbeddingCacheDir()}/photo_${photoId}.bin"
+                    fileStorage.saveFile(embeddingPath, EmbeddingSerializer.serialize(embedding))
+                    db.photosQueries.updateEmbeddingPath(embeddingPath, photoId)
+
+                    clustering.assignPhoto(photoId, embedding)
+                }
+                loadClustersSync()
             }
-            _clusters.value = result
         }
     }
 
