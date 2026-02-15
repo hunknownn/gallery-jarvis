@@ -88,6 +88,11 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
         GalleryViewModel(platformContext)
     }
 
+    // ACCESS_MEDIA_LOCATION: 갤러리 권한 허용 후 GPS EXIF 접근을 위해 요청 (거부돼도 앱 동작에 지장 없음)
+    val mediaLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -95,6 +100,10 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
         if (granted) {
             permissionDeniedPermanently = false
             currentScreen = Screen.ClusterList
+            // 갤러리 권한 허용 후 위치 메타데이터 접근 권한 추가 요청
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                mediaLocationLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            }
         } else {
             // rationale이 false이면 영구 거부 상태
             val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
