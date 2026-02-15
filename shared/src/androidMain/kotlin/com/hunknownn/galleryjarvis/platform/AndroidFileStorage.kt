@@ -1,22 +1,30 @@
 package com.hunknownn.galleryjarvis.platform
 
-actual class FileStorage {
+import java.io.File
+
+actual class FileStorage(
+    private val platformContext: PlatformContext
+) {
+    private val embeddingDir: File by lazy {
+        File(platformContext.context.cacheDir, "embeddings").also { it.mkdirs() }
+    }
 
     actual fun getEmbeddingCacheDir(): String {
-        // TODO: Context.cacheDir 기반 경로 반환
-        return ""
+        return embeddingDir.absolutePath
     }
 
     actual fun saveFile(path: String, data: ByteArray) {
-        // TODO: java.io.File로 저장
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        file.writeBytes(data)
     }
 
     actual fun loadFile(path: String): ByteArray? {
-        // TODO: java.io.File로 읽기
-        return null
+        val file = File(path)
+        return if (file.exists()) file.readBytes() else null
     }
 
     actual fun deleteFile(path: String) {
-        // TODO: java.io.File 삭제
+        File(path).delete()
     }
 }
