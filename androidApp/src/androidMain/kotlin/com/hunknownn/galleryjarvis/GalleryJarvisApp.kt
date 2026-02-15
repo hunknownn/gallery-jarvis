@@ -7,6 +7,7 @@ import com.hunknownn.galleryjarvis.di.ServiceLocator
 import com.hunknownn.galleryjarvis.platform.BackgroundTaskScheduler
 import com.hunknownn.galleryjarvis.platform.EmbeddingExtractor
 import com.hunknownn.galleryjarvis.platform.FileStorage
+import com.hunknownn.galleryjarvis.platform.ImageLabeler
 import com.hunknownn.galleryjarvis.platform.PhotoScanner
 import com.hunknownn.galleryjarvis.platform.PlatformContext
 
@@ -28,6 +29,7 @@ class GalleryJarvisApp : Application() {
             fileStorage = FileStorage(platformContext),
             photoScanner = PhotoScanner(platformContext),
             embeddingExtractor = EmbeddingExtractor(platformContext),
+            imageLabeler = ImageLabeler(platformContext),
             backgroundTaskScheduler = BackgroundTaskScheduler(platformContext),
         )
     }

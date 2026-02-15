@@ -31,6 +31,7 @@ class GalleryViewModel(
     private val fileStorage = ServiceLocator.fileStorage
     private val clustering = ServiceLocator.incrementalClustering
     private val nameGenerator = ServiceLocator.nameGenerator
+    private val imageLabeler = ServiceLocator.imageLabeler
 
     private val prefs = platformContext.context.getSharedPreferences(
         PREFS_NAME, Context.MODE_PRIVATE
@@ -201,7 +202,8 @@ class GalleryViewModel(
     }
 
     /**
-     * 이름이 없는 클러스터에 날짜 기반 이름을 자동 생성한다.
+     * 이름이 없는 클러스터에 날짜·라벨 기반 이름을 자동 생성한다.
+     * 대표 사진 1장만 분류하여 카테고리 라벨을 추출한다.
      */
     private fun generateClusterNames() {
         val clusterList = db.clustersQueries.selectAll().executeAsList()
@@ -214,14 +216,37 @@ class GalleryViewModel(
             val photos = db.photosQueries.selectByClusterId(cluster.cluster_id).executeAsList()
             val dateRange = extractDateRange(photos.mapNotNull { it.date_taken })
 
+            // 대표 사진에서 카테고리 라벨 추출 (클러스터당 1회만 추론)
+            val label = classifyRepresentativePhoto(cluster.representative_photo_id, photos)
+
             val generatedName = nameGenerator.generateName(
-                label = null,
+                label = label,
                 dateRange = dateRange,
                 location = null
             )
 
             db.clustersQueries.updateName(generatedName, now, cluster.cluster_id)
         }
+    }
+
+    /**
+     * 대표 사진을 분류하여 한국어 카테고리 라벨을 반환한다.
+     * 대표 사진이 없으면 첫 번째 사진을 사용한다.
+     */
+    private fun classifyRepresentativePhoto(
+        representativePhotoId: String?,
+        photos: List<com.hunknownn.galleryjarvis.Photos>
+    ): String? {
+        if (photos.isEmpty()) return null
+
+        val targetUri = if (representativePhotoId != null) {
+            photos.find { it.photo_id == representativePhotoId }?.platform_uri
+        } else {
+            null
+        } ?: photos.first().platform_uri
+
+        val imageBytes = ImageLoader.loadImageBytes(platformContext, targetUri) ?: return null
+        return imageLabeler.classifyImage(imageBytes)
     }
 
     /**

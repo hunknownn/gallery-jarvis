@@ -6,6 +6,7 @@ import com.hunknownn.galleryjarvis.naming.NameGenerator
 import com.hunknownn.galleryjarvis.platform.BackgroundTaskScheduler
 import com.hunknownn.galleryjarvis.platform.EmbeddingExtractor
 import com.hunknownn.galleryjarvis.platform.FileStorage
+import com.hunknownn.galleryjarvis.platform.ImageLabeler
 import com.hunknownn.galleryjarvis.platform.PhotoScanner
 
 /**
@@ -28,6 +29,9 @@ object ServiceLocator {
     lateinit var embeddingExtractor: EmbeddingExtractor
         private set
 
+    lateinit var imageLabeler: ImageLabeler
+        private set
+
     lateinit var backgroundTaskScheduler: BackgroundTaskScheduler
         private set
 
@@ -45,12 +49,14 @@ object ServiceLocator {
         fileStorage: FileStorage,
         photoScanner: PhotoScanner,
         embeddingExtractor: EmbeddingExtractor,
+        imageLabeler: ImageLabeler,
         backgroundTaskScheduler: BackgroundTaskScheduler,
     ) {
         this.database = database
         this.fileStorage = fileStorage
         this.photoScanner = photoScanner
         this.embeddingExtractor = embeddingExtractor
+        this.imageLabeler = imageLabeler
         this.backgroundTaskScheduler = backgroundTaskScheduler
         this.incrementalClustering = IncrementalClustering(database, fileStorage)
         this.nameGenerator = NameGenerator()
