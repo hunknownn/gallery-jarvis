@@ -32,6 +32,7 @@ class GalleryViewModel(
     private val clustering = ServiceLocator.incrementalClustering
     private val nameGenerator = ServiceLocator.nameGenerator
     private val imageLabeler = ServiceLocator.imageLabeler
+    private val backgroundScheduler = ServiceLocator.backgroundTaskScheduler
 
     private val prefs = platformContext.context.getSharedPreferences(
         PREFS_NAME, Context.MODE_PRIVATE
@@ -73,6 +74,8 @@ class GalleryViewModel(
         if (_autoClassifyEnabled.value) {
             observeGalleryChanges()
             scanAndClassify()
+            backgroundScheduler.scheduleEmbeddingExtraction()
+            backgroundScheduler.scheduleBatchClustering()
         }
     }
 
@@ -89,9 +92,12 @@ class GalleryViewModel(
         if (newValue) {
             observeGalleryChanges()
             scanAndClassify()
+            // 앱 종료 후에도 백그라운드 처리가 이어지도록 WorkManager 스케줄링
+            backgroundScheduler.scheduleEmbeddingExtraction()
+            backgroundScheduler.scheduleBatchClustering()
+        } else {
+            backgroundScheduler.cancelAll()
         }
-        // OFF 시 ContentObserver는 앱 프로세스 종료 시 자연스럽게 해제됨
-        // 현재 진행 중인 스캔은 완료까지 실행 (중단하지 않음)
     }
 
     /**

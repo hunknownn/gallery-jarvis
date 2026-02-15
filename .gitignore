@@ -10,6 +10,9 @@ build/
 
 # Android
 local.properties
+*.keystore
+*.jks
+keystore.properties
 *.apk
 *.aab
 *.ap_
