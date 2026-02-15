@@ -1,6 +1,7 @@
 package com.hunknownn.galleryjarvis
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -20,11 +21,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hunknownn.galleryjarvis.platform.PlatformContext
 import com.hunknownn.galleryjarvis.ui.navigation.Screen
 import com.hunknownn.galleryjarvis.ui.screen.ClusterDetailScreen
 import com.hunknownn.galleryjarvis.ui.screen.ClusterListScreen
+import com.hunknownn.galleryjarvis.ui.screen.OnboardingScreen
 import com.hunknownn.galleryjarvis.ui.screen.PermissionScreen
 import com.hunknownn.galleryjarvis.ui.theme.GalleryJarvisTheme
 import com.hunknownn.galleryjarvis.ui.viewmodel.GalleryViewModel
@@ -32,6 +35,7 @@ import com.hunknownn.galleryjarvis.ui.viewmodel.GalleryViewModel
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContent {
             GalleryJarvisTheme {
@@ -40,6 +44,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private const val PREFS_NAME = "gallery_jarvis_prefs"
+private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
 @Composable
 private fun GalleryJarvisApp(platformContext: PlatformContext) {
@@ -50,6 +57,10 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
     }
 
     val activity = LocalContext.current as ComponentActivity
+    val prefs = remember {
+        platformContext.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val onboardingCompleted = remember { prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false) }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -62,7 +73,13 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
     var permissionDeniedPermanently by remember { mutableStateOf(false) }
 
     var currentScreen by remember {
-        mutableStateOf(if (hasPermission) Screen.ClusterList else Screen.Permission)
+        mutableStateOf(
+            when {
+                !onboardingCompleted -> Screen.Onboarding
+                hasPermission -> Screen.ClusterList
+                else -> Screen.Permission
+            }
+        )
     }
     var selectedClusterId by remember { mutableStateOf<Long?>(null) }
 
@@ -88,6 +105,15 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
     }
 
     when (currentScreen) {
+        Screen.Onboarding -> {
+            OnboardingScreen(
+                onComplete = {
+                    prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, true).apply()
+                    currentScreen = if (hasPermission) Screen.ClusterList else Screen.Permission
+                }
+            )
+        }
+
         Screen.Permission -> {
             PermissionScreen(
                 onRequestPermission = { permissionLauncher.launch(permission) },
@@ -105,19 +131,26 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
             val clusters by viewModel.clusters.collectAsState()
             val isProcessing by viewModel.isProcessing.collectAsState()
             val progress by viewModel.progress.collectAsState()
+            val processedCount by viewModel.processedCount.collectAsState()
+            val totalCount by viewModel.totalCount.collectAsState()
             val autoClassifyEnabled by viewModel.autoClassifyEnabled.collectAsState()
+            val isRefreshing by viewModel.isRefreshing.collectAsState()
 
             ClusterListScreen(
                 clusters = clusters,
                 isProcessing = isProcessing,
                 progress = progress,
+                processedCount = processedCount,
+                totalCount = totalCount,
                 autoClassifyEnabled = autoClassifyEnabled,
+                isRefreshing = isRefreshing,
                 onAutoClassifyToggle = { viewModel.toggleAutoClassify() },
                 onClusterClick = { clusterId ->
                     selectedClusterId = clusterId
                     currentScreen = Screen.ClusterDetail
                 },
-                onScanClick = { viewModel.scanAndClassify() }
+                onScanClick = { viewModel.scanAndClassify() },
+                onRefresh = { viewModel.refreshClusters() }
             )
         }
 

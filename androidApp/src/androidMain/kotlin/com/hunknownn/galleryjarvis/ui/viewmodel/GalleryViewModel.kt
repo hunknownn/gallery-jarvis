@@ -46,6 +46,15 @@ class GalleryViewModel(
     private val _progress = MutableStateFlow("")
     val progress: StateFlow<String> = _progress.asStateFlow()
 
+    private val _processedCount = MutableStateFlow(0)
+    val processedCount: StateFlow<Int> = _processedCount.asStateFlow()
+
+    private val _totalCount = MutableStateFlow(0)
+    val totalCount: StateFlow<Int> = _totalCount.asStateFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _autoClassifyEnabled = MutableStateFlow(
         prefs.getBoolean(KEY_AUTO_CLASSIFY, false)
     )
@@ -94,12 +103,15 @@ class GalleryViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
+            _processedCount.value = 0
+            _totalCount.value = 0
             try {
                 val photos = scanner.scanAllPhotos()
                 _progress.value = "사진 ${photos.size}장 발견"
 
                 var processed = 0
                 val total = photos.size
+                _totalCount.value = total
 
                 for (batch in photos.chunked(BATCH_SIZE)) {
                     for (photo in batch) {
@@ -109,6 +121,7 @@ class GalleryViewModel(
                         val existing = db.photosQueries.findById(photo.id).executeAsOneOrNull()
                         if (existing?.embedding_path != null) {
                             processed++
+                            _processedCount.value = processed
                             continue
                         }
 
@@ -144,6 +157,7 @@ class GalleryViewModel(
                         }
 
                         processed++
+                        _processedCount.value = processed
                         _progress.value = "처리 중... $processed/$total"
                     }
 
@@ -161,6 +175,8 @@ class GalleryViewModel(
                 _progress.value = "오류: ${e.message}"
             } finally {
                 _isProcessing.value = false
+                _processedCount.value = 0
+                _totalCount.value = 0
             }
         }
     }
@@ -182,6 +198,20 @@ class GalleryViewModel(
     fun loadClusters() {
         viewModelScope.launch(Dispatchers.IO) {
             loadClustersSync()
+        }
+    }
+
+    /**
+     * Pull-to-refresh: DB에서 클러스터 목록을 리로드한다.
+     */
+    fun refreshClusters() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            try {
+                loadClustersSync()
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
 
