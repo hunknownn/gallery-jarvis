@@ -12,3 +12,12 @@ SELECT * FROM photo_cluster_map WHERE cluster_id = ?;
 
 insert:
 INSERT OR REPLACE INTO photo_cluster_map VALUES (?, ?);
+
+countByClusterId:
+SELECT COUNT(*) FROM photo_cluster_map WHERE cluster_id = ?;
+
+deleteByPhotoId:
+DELETE FROM photo_cluster_map WHERE photo_id = ?;
+
+deleteByClusterId:
+DELETE FROM photo_cluster_map WHERE cluster_id = ?;

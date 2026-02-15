@@ -30,12 +30,15 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.sqldelight.coroutines)
+            implementation(libs.kotlinx.datetime)
         }
 
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.sqldelight.android.driver)
             implementation(libs.androidx.work.runtime)
+            implementation(libs.tflite)
+            implementation(libs.tflite.support)
         }
 
         iosMain.dependencies {

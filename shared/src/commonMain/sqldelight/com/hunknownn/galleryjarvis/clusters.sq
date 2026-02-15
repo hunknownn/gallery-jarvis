@@ -10,9 +10,24 @@ CREATE TABLE clusters (
 selectAll:
 SELECT * FROM clusters;
 
+findById:
+SELECT * FROM clusters WHERE cluster_id = ?;
+
 insert:
 INSERT INTO clusters (name, representative_photo_id, center_embedding_path, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?);
 
 updateName:
 UPDATE clusters SET name = ?, updated_at = ? WHERE cluster_id = ?;
+
+updateCenterEmbeddingPath:
+UPDATE clusters SET center_embedding_path = ?, updated_at = ? WHERE cluster_id = ?;
+
+updateRepresentativePhoto:
+UPDATE clusters SET representative_photo_id = ?, updated_at = ? WHERE cluster_id = ?;
+
+lastInsertId:
+SELECT last_insert_rowid();
+
+deleteById:
+DELETE FROM clusters WHERE cluster_id = ?;

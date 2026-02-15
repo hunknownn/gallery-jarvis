@@ -20,3 +20,17 @@ INSERT OR REPLACE INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteById:
 DELETE FROM photos WHERE photo_id = ?;
+
+selectWithoutEmbedding:
+SELECT * FROM photos WHERE embedding_path IS NULL;
+
+updateEmbeddingPath:
+UPDATE photos SET embedding_path = ? WHERE photo_id = ?;
+
+selectByClusterId:
+SELECT p.* FROM photos p
+INNER JOIN photo_cluster_map pcm ON p.photo_id = pcm.photo_id
+WHERE pcm.cluster_id = ?;
+
+countAll:
+SELECT COUNT(*) FROM photos;

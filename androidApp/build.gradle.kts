@@ -24,6 +24,10 @@ kotlin {
             @Suppress("DEPRECATION")
             implementation(compose.runtime)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.coil.compose)
+            implementation(libs.lifecycle.viewmodel.compose)
+            implementation(libs.lifecycle.runtime.compose)
+            implementation(libs.navigation.compose)
         }
     }
 }
@@ -47,5 +51,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        noCompress += "tflite"
     }
 }
