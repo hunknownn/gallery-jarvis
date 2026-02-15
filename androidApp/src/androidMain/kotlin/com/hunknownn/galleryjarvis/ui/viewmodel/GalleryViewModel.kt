@@ -1,5 +1,6 @@
 package com.hunknownn.galleryjarvis.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hunknownn.galleryjarvis.di.ServiceLocator
@@ -31,6 +32,10 @@ class GalleryViewModel(
     private val clustering = ServiceLocator.incrementalClustering
     private val nameGenerator = ServiceLocator.nameGenerator
 
+    private val prefs = platformContext.context.getSharedPreferences(
+        PREFS_NAME, Context.MODE_PRIVATE
+    )
+
     private val _clusters = MutableStateFlow<List<ClusterWithPhotos>>(emptyList())
     val clusters: StateFlow<List<ClusterWithPhotos>> = _clusters.asStateFlow()
 
@@ -40,13 +45,43 @@ class GalleryViewModel(
     private val _progress = MutableStateFlow("")
     val progress: StateFlow<String> = _progress.asStateFlow()
 
+    private val _autoClassifyEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_AUTO_CLASSIFY, false)
+    )
+    val autoClassifyEnabled: StateFlow<Boolean> = _autoClassifyEnabled.asStateFlow()
+
+    private var observerRegistered = false
+
     companion object {
         private const val BATCH_SIZE = 50
+        private const val PREFS_NAME = "gallery_jarvis_prefs"
+        private const val KEY_AUTO_CLASSIFY = "auto_classify_enabled"
     }
 
     init {
         loadClusters()
-        observeGalleryChanges()
+        if (_autoClassifyEnabled.value) {
+            observeGalleryChanges()
+            scanAndClassify()
+        }
+    }
+
+    /**
+     * 자동 분류 ON/OFF를 토글한다.
+     * ON: ContentObserver 등록 + 미처리분 자동 스캔
+     * OFF: ContentObserver 해제
+     */
+    fun toggleAutoClassify() {
+        val newValue = !_autoClassifyEnabled.value
+        _autoClassifyEnabled.value = newValue
+        prefs.edit().putBoolean(KEY_AUTO_CLASSIFY, newValue).apply()
+
+        if (newValue) {
+            observeGalleryChanges()
+            scanAndClassify()
+        }
+        // OFF 시 ContentObserver는 앱 프로세스 종료 시 자연스럽게 해제됨
+        // 현재 진행 중인 스캔은 완료까지 실행 (중단하지 않음)
     }
 
     /**
@@ -217,7 +252,12 @@ class GalleryViewModel(
      * 갤러리 변경을 감지하여 새 사진을 증분 처리한다.
      */
     private fun observeGalleryChanges() {
+        if (observerRegistered) return
+        observerRegistered = true
+
         scanner.observeChanges { changedIds ->
+            if (!_autoClassifyEnabled.value) return@observeChanges
+
             viewModelScope.launch(Dispatchers.IO) {
                 for (photoId in changedIds) {
                     val existing = db.photosQueries.findById(photoId).executeAsOneOrNull()

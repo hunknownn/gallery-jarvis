@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -19,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -35,6 +39,7 @@ import com.hunknownn.galleryjarvis.ui.model.ClusterWithPhotos
  *
  * 분류된 클러스터를 2열 그리드로 표시하며,
  * 각 클러스터의 대표 사진과 이름, 사진 수를 보여준다.
+ * TopBar에 자동 분류 ON/OFF 토글을 제공한다.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,12 +47,32 @@ fun ClusterListScreen(
     clusters: List<ClusterWithPhotos>,
     isProcessing: Boolean,
     progress: String,
+    autoClassifyEnabled: Boolean,
+    onAutoClassifyToggle: () -> Unit,
     onClusterClick: (Long) -> Unit,
     onScanClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Gallery Jarvis") })
+            TopAppBar(
+                title = { Text("Gallery Jarvis") },
+                actions = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "자동 분류",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Switch(
+                            checked = autoClassifyEnabled,
+                            onCheckedChange = { onAutoClassifyToggle() }
+                        )
+                    }
+                }
+            )
         },
         floatingActionButton = {
             if (!isProcessing) {

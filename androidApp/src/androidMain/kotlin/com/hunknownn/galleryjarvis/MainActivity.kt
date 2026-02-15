@@ -9,7 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,13 +69,6 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
         if (granted) currentScreen = Screen.ClusterList
     }
 
-    // 권한 승인 후 자동으로 스캔 시작
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) {
-            viewModel.scanAndClassify()
-        }
-    }
-
     when (currentScreen) {
         Screen.Permission -> {
             PermissionScreen(
@@ -88,11 +80,14 @@ private fun GalleryJarvisApp(platformContext: PlatformContext) {
             val clusters by viewModel.clusters.collectAsState()
             val isProcessing by viewModel.isProcessing.collectAsState()
             val progress by viewModel.progress.collectAsState()
+            val autoClassifyEnabled by viewModel.autoClassifyEnabled.collectAsState()
 
             ClusterListScreen(
                 clusters = clusters,
                 isProcessing = isProcessing,
                 progress = progress,
+                autoClassifyEnabled = autoClassifyEnabled,
+                onAutoClassifyToggle = { viewModel.toggleAutoClassify() },
                 onClusterClick = { clusterId ->
                     selectedClusterId = clusterId
                     currentScreen = Screen.ClusterDetail
