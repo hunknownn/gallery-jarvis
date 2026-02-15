@@ -2,6 +2,8 @@ package com.hunknownn.galleryjarvis.ui.viewmodel
 
 import android.content.Context
 import android.location.Geocoder
+import android.os.Build
+import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hunknownn.galleryjarvis.di.ServiceLocator
@@ -10,6 +12,7 @@ import com.hunknownn.galleryjarvis.platform.PlatformContext
 import com.hunknownn.galleryjarvis.ui.model.ClusterWithPhotos
 import com.hunknownn.galleryjarvis.util.EmbeddingSerializer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,6 +65,7 @@ class GalleryViewModel(
     )
     val autoClassifyEnabled: StateFlow<Boolean> = _autoClassifyEnabled.asStateFlow()
 
+    private var classifyJob: Job? = null
     private var observerRegistered = false
 
     companion object {
@@ -97,6 +101,7 @@ class GalleryViewModel(
             backgroundScheduler.scheduleEmbeddingExtraction()
             backgroundScheduler.scheduleBatchClustering()
         } else {
+            classifyJob?.cancel()
             backgroundScheduler.cancelAll()
         }
     }
@@ -109,7 +114,7 @@ class GalleryViewModel(
         if (_isProcessing.value) return
 
         // Dispatchers.IO 유지: loadClustersSync(), clustering.assignPhoto() 등 블로킹 DB 호출이 포함됨
-        viewModelScope.launch(Dispatchers.IO) {
+        classifyJob = viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
             _processedCount.value = 0
             _totalCount.value = 0
@@ -124,6 +129,12 @@ class GalleryViewModel(
                 for (batch in photos.chunked(BATCH_SIZE)) {
                     for (photo in batch) {
                         yield() // 코루틴 취소 지점
+
+                        // 발열 감지 시 처리 중단
+                        if (isDeviceOverheating()) {
+                            _progress.value = "기기 과열로 중단됨"
+                            return@launch
+                        }
 
                         // 이미 처리된 사진은 건너뜀
                         val existing = db.photosQueries.findById(photo.id).executeAsOneOrNull()
@@ -174,14 +185,12 @@ class GalleryViewModel(
                     System.gc()
                 }
 
-                // 클러스터 이름 자동 생성
-                generateClusterNames()
-
-                loadClustersSync()
                 _progress.value = "완료"
             } catch (e: Exception) {
                 _progress.value = "오류: ${e.message}"
             } finally {
+                generateClusterNames()
+                loadClustersSync()
                 _isProcessing.value = false
                 _processedCount.value = 0
                 _totalCount.value = 0
@@ -283,6 +292,17 @@ class GalleryViewModel(
 
             db.clustersQueries.updateName(generatedName, now, cluster.cluster_id)
         }
+    }
+
+    /**
+     * 기기의 발열 상태를 확인한다.
+     * Android Q+ 에서 THERMAL_STATUS_SEVERE 이상이면 과열로 판단.
+     */
+    private fun isDeviceOverheating(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        val powerManager = platformContext.context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            ?: return false
+        return powerManager.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
     }
 
     /**
